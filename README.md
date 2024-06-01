@@ -1,6 +1,6 @@
 ## Autograd Neural Network
 
-This Neural Network library utilizes 'Automatic Differentiation' (or 'Autograd') to compute gradients of the loss function with respect to the parameters of the model. The library is designed to be simple and easy to use, while still providing a lot of flexibility to the user. This library is made for learning purposes.
+This Neural Network library utilizes 'Automatic Differentiation' (or 'Autograd') to compute gradients of the loss function with respect to the model's parameters. The library is designed to be simple and easy to understand. This library is made for learning purposes.
 
 **The main components of the library are**:
 
