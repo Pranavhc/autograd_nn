@@ -2,12 +2,12 @@ from typing import Union
 import numpy as np
 
 class Tensor():
-    def __init__(self, data, autograd:bool=False, parents=None, op:Union[str, None]=None, id:Union[int, None]=None) -> None:
+    def __init__(self, data, requires_grad:bool=False, parents=None, op:Union[str, None]=None, id:Union[int, None]=None) -> None:
         self.data = np.array(data)
         self.op = op
         self.parents = parents
         self.grad = None
-        self.autograd = autograd
+        self.requires_grad = requires_grad
         self.id = id if id is not None else np.random.randint(0, 100000)
         self.children = {}
         self.shape = self.data.shape
@@ -18,34 +18,30 @@ class Tensor():
                 parent.children[self.id] = parent.children.get(self.id, 0) + 1
 
     @classmethod
-    def zeros(cls, arr_or_shape: Union[np.ndarray, tuple, int], autograd:bool=False):
+    def zeros(cls, arr_or_shape: Union[np.ndarray, tuple, int], requires_grad:bool=False):
         if not isinstance(arr_or_shape, (np.ndarray, tuple, int)):
             raise Exception("You must provide either an array or shape!")
         
-        if isinstance(arr_or_shape, np.ndarray): return cls(np.zeros_like(arr_or_shape), autograd=autograd)
-        elif isinstance(arr_or_shape, (tuple, int)): return cls(np.zeros(arr_or_shape), autograd=autograd)
+        if isinstance(arr_or_shape, np.ndarray): return cls(np.zeros_like(arr_or_shape), requires_grad=requires_grad)
+        elif isinstance(arr_or_shape, (tuple, int)): return cls(np.zeros(arr_or_shape), requires_grad=requires_grad)
     
     @classmethod
-    def ones(cls, arr_or_shape: Union[np.ndarray, tuple, int], autograd:bool=False):
+    def ones(cls, arr_or_shape: Union[np.ndarray, tuple, int], requires_grad:bool=False):
         if not isinstance(arr_or_shape, (np.ndarray, tuple, int)):
             raise Exception("You must provide either an array or shape!")
         
-        if isinstance(arr_or_shape, np.ndarray): return cls(np.ones_like(arr_or_shape), autograd=autograd)
-        elif isinstance(arr_or_shape, (tuple, int)): return cls(np.ones(arr_or_shape), autograd=autograd)
+        if isinstance(arr_or_shape, np.ndarray): return cls(np.ones_like(arr_or_shape), requires_grad=requires_grad)
+        elif isinstance(arr_or_shape, (tuple, int)): return cls(np.ones(arr_or_shape), requires_grad=requires_grad)
 
-    def __getitem__(self, idx:int):
-        return Tensor(self.data[idx], autograd=self.autograd, parents=self.parents)
-
-    def to_numpy(self) -> np.ndarray:
-        return self.data
+    def to_numpy(self) -> np.ndarray: return self.data
 
     def received_grads_from_all_children(self) -> bool:
         for id, count in self.children.items():
             if count != 0: return False
         return True
     
-    def backward(self, grad=None, grad_origin=None) -> None:
-        if not self.autograd: raise Exception("Cannot backpropagate through a non-autograd tensor!") 
+    def backward(self, grad=None, grad_origin=None) -> None:       
+        if not self.requires_grad: raise Exception("Cannot backpropagate through a non-autograd tensor!") 
 
         if grad is None: grad = Tensor(np.ones_like(self.data))
         if grad_origin:
@@ -56,8 +52,25 @@ class Tensor():
         if self.grad is None: self.grad = grad
         else: self.grad += grad
 
+
         if self.parents and (self.received_grads_from_all_children() or grad_origin is None):
             # backward methods for each operation
+
+            # start: index (__getitem__) and __setitem__ don't work as I would like them to
+            if self.op == "index":
+                new_grad = np.zeros_like(self.parents[0].data)
+                # Assign the gradient values directly using advanced indexing
+                new_grad[self.idx] += self.grad  # type: ignore
+                # Backpropagate the gradient to the parent tensor
+                self.parents[0].backward(Tensor(new_grad), self)
+
+            if self.op == 'setitem':
+                np.add.at(self.parents[0].grad, self.idx, self.grad.data) # type: ignore
+                self.parents[0].backward(Tensor(self.parents[0].grad), self)
+
+                if len(self.parents) > 1:
+                    self.parents[1].backward(self.grad[self.idx], self) # type: ignore
+            # end: index (__getitem__) and __setitem__ 
 
             if self.op == 'add':
                 self.parents[0].backward(self.grad, self)
@@ -108,61 +121,83 @@ class Tensor():
                 self.parents[0].backward(Tensor(np.where(self.parents[0].data < 0, 0, 1) * self.grad.data), self)
 
             if self.op == "tanh":
-                tanh_val = np.tanh(self.parents[0].data)
-                self.parents[0].backward(Tensor((1 - tanh_val ** 2) * self.grad.data), self)
+                # tanh_val = np.tanh(self.parents[0].data)
+                tanh = self.data
+                self.parents[0].backward(Tensor((1 - tanh ** 2) * self.grad.data), self)
             
             if self.op == "sigmoid":
-                sig = self.data
-                self.parents[0].backward(Tensor(self.grad.data * sig * (1 - sig)), self)
+                sigmoid = self.data
+                self.parents[0].backward(Tensor(self.grad.data * sigmoid * (1 - sigmoid)), self)
 
             if self.op == "softmax":
                 softmax = self.data
                 grad = np.multiply(self.grad.data, softmax)
-                grad = grad - np.sum(grad, axis=-1, keepdims=True) * softmax
+                grad -= np.sum(grad, axis=-1, keepdims=True) * softmax
 
                 self.parents[0].backward(Tensor(grad), self)
+
+    # start: __getitem__ and __setitem__ currently don't work as I would like them to
+    def __getitem__(self, idx):
+        if self.requires_grad:
+            new = Tensor(self.data[idx], requires_grad=True, parents=[self], op="index")
+            new.idx = idx # type: ignore
+            return new
+        return Tensor(self.data[idx])
+    
+    def __setitem__(self, idx, value):
+        self.data[idx] = value.data if isinstance(value, Tensor) else value
+
+        # Track the operation for autograd
+        if self.requires_grad:
+            if isinstance(value, Tensor):
+                new = Tensor(self.data, requires_grad=True, parents=[self, value], op="setitem")
+            else:
+                new = Tensor(self.data, requires_grad=True, parents=[self], op="setitem")
+            new.idx = idx  # type: ignore
+            self = new
+    # end: __getitem__ and __setitem__
     
     def __add__(self, other):
         if isinstance(other, Tensor):
-            if self.autograd and other.autograd:
-                return Tensor(self.data + other.data, autograd=True, parents=[self, other], op='add')
+            if self.requires_grad and other.requires_grad:
+                return Tensor(self.data + other.data, requires_grad=True, parents=[self, other], op='add')
             return Tensor(self.data + other.data)
         elif isinstance(other, (int, float)):
-            if self.autograd:
-                return Tensor(self.data + other, autograd=True, parents=[self], op='add')
+            if self.requires_grad:
+                return Tensor(self.data + other, requires_grad=True, parents=[self], op='add')
             return Tensor(self.data + other)
         else: raise TypeError("other must be a Tensor or a number!")
     
     def __neg__(self):
-        if self.autograd: return Tensor(self.data * -1, autograd=True, parents=[self], op="neg")
+        if self.requires_grad: return Tensor(self.data * -1, requires_grad=True, parents=[self], op="neg")
         return Tensor(self.data * -1)
     
     def __sub__(self, other):
         if isinstance(other, Tensor):
-            if(self.autograd and other.autograd):
-                return Tensor(self.data - other.data, autograd=True, parents=[self,other], op="sub")
+            if(self.requires_grad and other.requires_grad):
+                return Tensor(self.data - other.data, requires_grad=True, parents=[self,other], op="sub")
             return Tensor(self.data - other.data)
         elif isinstance(other, (int, float)):
-            if self.autograd:
-                return Tensor(self.data - other, autograd=True, parents=[self], op="sub")
+            if self.requires_grad:
+                return Tensor(self.data - other, requires_grad=True, parents=[self], op="sub")
             return Tensor(self.data - other)
         else: raise TypeError("other must be a Tensor or a number!")
 
     def __rsub__(self, other):
         if isinstance(other, (int, float)):
-            if self.autograd:
-                return Tensor(other - self.data, autograd=True, parents=[self], op="rsub")
+            if self.requires_grad:
+                return Tensor(other - self.data, requires_grad=True, parents=[self], op="rsub")
             return Tensor(other - self.data)
         else: raise TypeError("other must be a number!")
     
     def __mul__(self, other):
-        if(self.autograd and other.autograd):
-            return Tensor(self.data * other.data, autograd=True, parents=[self,other], op="mul")
+        if(self.requires_grad and other.requires_grad):
+            return Tensor(self.data * other.data, requires_grad=True, parents=[self,other], op="mul")
         return Tensor(self.data * other.data)
     
     def sum(self, dim:int):
-        if(self.autograd):
-            return Tensor(self.data.sum(dim), autograd=True, parents=[self], op="sum_"+str(dim))
+        if(self.requires_grad):
+            return Tensor(self.data.sum(dim), requires_grad=True, parents=[self], op="sum_"+str(dim))
         return Tensor(self.data.sum(dim))
     
     def expand(self, dim:int, copies):
@@ -172,57 +207,57 @@ class Tensor():
         new_data = self.data.repeat(copies).reshape(new_shape)
         new_data = new_data.transpose(trans_cmd)
         
-        if(self.autograd):
-            return Tensor(new_data, autograd=True, parents=[self], op="expand_"+str(dim))
+        if(self.requires_grad):
+            return Tensor(new_data, requires_grad=True, parents=[self], op="expand_"+str(dim))
         return Tensor(new_data)
     
     def transpose(self):
-        if(self.autograd):
-            return Tensor(self.data.transpose(), autograd=True, parents=[self], op="transpose")
+        if(self.requires_grad):
+            return Tensor(self.data.transpose(), requires_grad=True, parents=[self], op="transpose")
         return Tensor(self.data.transpose())
     
     def dot(self, x):
-        if(self.autograd):
-            return Tensor(self.data.dot(x.data), autograd=True, parents=[self,x], op="dot")
+        if(self.requires_grad):
+            return Tensor(self.data.dot(x.data), requires_grad=True, parents=[self,x], op="dot")
         return Tensor(self.data.dot(x.data))
     
     def log(self):
-        if(self.autograd):
-            return Tensor(np.log(self.data), autograd=True, parents=[self], op="log")
+        if(self.requires_grad):
+            return Tensor(np.log(self.data), requires_grad=True, parents=[self], op="log")
         return Tensor(np.log(self.data))
     
     def mean(self):
-        if self.autograd:
-            return Tensor(np.mean(self.data), autograd=True, parents=[self], op="mean")
+        if self.requires_grad:
+            return Tensor(np.mean(self.data), requires_grad=True, parents=[self], op="mean")
         return Tensor(np.mean(self.data))
     
     def exp(self):
-        if self.autograd:
-            return Tensor(np.exp(self.data), autograd=True, parents=[self], op="exp")
+        if self.requires_grad:
+            return Tensor(np.exp(self.data), requires_grad=True, parents=[self], op="exp")
         return Tensor(np.exp(self.data))
         
     def relu(self):
-        if self.autograd:
-            return Tensor(np.maximum(0, self.data), autograd=True, parents=[self], op="relu")
+        if self.requires_grad:
+            return Tensor(np.maximum(0, self.data), requires_grad=True, parents=[self], op="relu")
         return Tensor(np.maximum(0, self.data))
     
     def tanh(self):
-        if self.autograd:
-            return Tensor(np.tanh(self.data), autograd=True, parents=[self], op="tanh")
+        if self.requires_grad:
+            return Tensor(np.tanh(self.data), requires_grad=True, parents=[self], op="tanh")
         return Tensor(np.tanh(self.data))
 
     def sigmoid(self):
         data = np.clip(self.data, -709, 709)  # np.exp(709) is the largest representable number
 
-        if self.autograd:
-            return Tensor(1 / (1 + np.exp(-data)), autograd=True, parents=[self], op="sigmoid")
+        if self.requires_grad:
+            return Tensor(1 / (1 + np.exp(-data)), requires_grad=True, parents=[self], op="sigmoid")
         return Tensor(1 / (1 + np.exp(-data)))
     
     def softmax(self):
         e_x = np.exp(self.data - np.max(self.data, axis=-1, keepdims=True))
         softmax = e_x / np.sum(e_x, axis=-1, keepdims=True)
-        if self.autograd:
-            return Tensor(softmax, autograd=True, parents=[self], op="softmax")
+        if self.requires_grad:
+            return Tensor(softmax, requires_grad=True, parents=[self], op="softmax")
         return Tensor(softmax)
 
     def __repr__(self) -> str:
