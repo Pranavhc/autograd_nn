@@ -2,6 +2,8 @@
 
 This Neural Network library utilizes 'Automatic Differentiation' (or 'Autograd') to compute gradients of the loss function with respect to the model's parameters. The library is designed to be simple and easy to understand. This library is made for learning purposes.
 
+Look into [tensor.py](https://github.com/Pranavhc/autograd_nn/blob/main/nn/tensor.py) for the autograd system.
+
 **The main components of the library are**:
 
 1. **Tensor**: A multi-dimensional array with support for autograd.
