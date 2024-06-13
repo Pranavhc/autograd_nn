@@ -46,7 +46,7 @@ clf = Sequential([
     Softmax()
 ])
 
-train_loader = DataLoader(X_train, y_train, 128, shuffle=True, autograd=True)
+train_loader = DataLoader(X_train, y_train, 128, shuffle=True, requires_grad=True)
 val_loader = DataLoader(X_val, y_val, 128, shuffle=True)
 test_loader = DataLoader(X_test, y_test, 128, shuffle=True)
 
