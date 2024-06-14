@@ -18,7 +18,6 @@ class Trainer:
         self.accuracy = {'train': [], 'val': []}
 
     def _train_on_batch(self, X:Tensor, y:Tensor) -> tuple[float, np.ndarray]:
-        self.model.train()
         self.optim.zero_grad()
 
         pred = self.model.forward(X)
@@ -29,7 +28,6 @@ class Trainer:
         return (float(loss.data.mean()), pred.data)
     
     def _eval_on_batch(self, X:Tensor, y:Tensor) -> tuple[float, np.ndarray]:
-        self.model.eval()
         pred = self.model.forward(X)
         loss = self.criterion(y, pred)
         return (float(loss.data.mean()), pred.data)
@@ -46,6 +44,7 @@ class Trainer:
             train_batch_loss, val_batch_loss = [], []
             train_batch_acc, val_batch_acc = [], []
 
+            self.model.train()
             with tqdm(train_data(), unit='batch', disable=not verbose) as pbar:
                 for X_t, y_t in pbar:
                     pbar.set_description(f"Epoch {e+1}/{epochs}")
@@ -64,6 +63,7 @@ class Trainer:
                 if show_accuracy: self.accuracy['train'].append(np.mean(train_batch_acc))
 
             if val_data is not None:
+                self.model.eval()
                 for X_v, y_v in val_data():
                     val_loss, pred_y_v = self._eval_on_batch(X_v, y_v)
                     val_batch_loss.append(val_loss)
