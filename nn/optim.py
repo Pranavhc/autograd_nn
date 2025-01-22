@@ -104,8 +104,8 @@ class Adam(Optimizer):
         super().__init__()
         self.parameters = parameters
         self.learning_rate = lr
-        self.b1 = b1
-        self.b2 = b2
+        self.b1 = b1 # decay rate for momentum
+        self.b2 = b2 # decay rate for velocity
         self.epsilon = epsilon
 
         self.momentum = [np.zeros_like(param.data) for param in parameters]
@@ -115,8 +115,8 @@ class Adam(Optimizer):
         for param, momentum, velocity in zip(self.parameters, self.momentum, self.velocity):
             if param.grad is None: raise Exception("Gradient is None!")
 
-            momentum[:] = self.b1 * momentum + (1 - self.b1) * param.grad.data
-            velocity[:] = self.b2 * velocity + (1 - self.b2) * param.grad.data**2
+            momentum[:] = self.b1 * momentum + (1 - self.b1) * param.grad.data      # exponentially decaying average of past gradients
+            velocity[:] = self.b2 * velocity + (1 - self.b2) * param.grad.data**2   # exponentially decaying average of past squared gradients
             
             # since m and v are 0s intially, they remain close to 0s. To avoid this bias, we scale them up.
             m = momentum / (1 - self.b1)
