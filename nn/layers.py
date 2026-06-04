@@ -66,6 +66,47 @@ class Dense(Layer):
         """forward pass. Returns input @ weights + bias"""
         return input.dot(self.weights) + self.bias.expand(0, len(input.data))
 
+# start: Tensor library is incomplete for this to work
+class BatchNormalization(Layer):
+    """## NOT IMPLEMENTED YET"""
+    
+    def __init__(self, input_size:int, eps=1e-5, momentum:float=0.1) -> None:
+        super().__init__()
+
+        self.input_size = input_size
+        self.eps = eps
+        self.momentum = momentum
+
+        self.gain = Tensor.ones(self.input_size, requires_grad=True)
+        self.bias = Tensor.zeros(self.input_size, requires_grad=True)
+
+        self.running_mean = Tensor.zeros(self.input_size, requires_grad=False)
+        self.running_std = Tensor.zeros(self.input_size, requires_grad=False)
+
+        self.params = [self.gain, self.bias]
+
+    def forward(self, input: Tensor) -> Tensor:
+        """
+        ### Tensor Library is incomplete for now
+        ```python
+        mean_i = input.mean(axis=0, keepdims=True)
+        std_i = input.std(axis=0, keepdims=True)
+         
+        if self.mode == "train":
+            self.running_mean = self.momentum * mean_i + (1 - self.momentum) * self.running_mean
+            self.running_std = self.momentum * std_i + (1 - self.momentum) * self.running_std
+            input_normalized = (input - mean_i) / (std_i + self.eps)
+
+        else: input_normalized = (input - self.running_mean) / (self.running_std + self.eps)
+
+        out = self.gain * input_normalized + self.bias
+
+        return out
+        ```
+        """
+        raise NotImplementedError("BatchNormalization is not implemented yet.")
+# end: Tensor library is incomplete for this to work
+
 # start Tensor indexing is not working well currently
 class RNN(Layer):
     def __init__(self, input_size:int, output_size:int, activation:Layer, is_last=False) -> None:
